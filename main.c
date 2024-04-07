@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <pcap.h>
 #include <netinet/in.h>
+#include <netinet/ether.h>
+#include <arpa/inet.h>
 
 typedef struct ethernet_header {
     unsigned char dst_mac[6];
@@ -38,19 +40,46 @@ typedef struct tcp_header {
 void packet_handler(__u_char *data, const struct pcap_pkthdr *packet_header, const __u_char *packet);
 
 int main() {
-    char error_buff[PCAP_ERRBUF_SIZE];
-    pcap_t *captured;
+    char errbuf[PCAP_ERRBUF_SIZE];
+    pcap_t *handle;
+    struct pcap_pkthdr packet_header;
+    const unsigned char *packet;
 
-    captured = pcap_open_live("eth0", BUFSIZ, 1, 1000, error_buff);
+    handle = pcap_open_live("lo", BUFSIZ, 1, 1000, errbuf);
     
-    if (captured == NULL)   return 1;
+    if (handle == NULL) {
+        fprintf(stderr, "No device detected, %s\n", errbuf);
+        return 1;
+    }
 
-    pcap_loop(captured, 0, packet_handler, NULL);
-    pcap_close(captured);
-
+    while ((packet = pcap_next(handle, &packet_header)) != NULL) {
+        packet_handler(NULL, &packet_header, packet);
+    }
+    
+    pcap_close(handle);
     return 0;
 }
 
+
+
 void packet_handler(__u_char *data, const struct pcap_pkthdr *packet_header, const __u_char *packet) {
-    return 0;
+    ethernet_header* ethernetHeader = (ethernet_header*)packet;
+    ip_header* ipHeader = (ip_header*)(packet + sizeof(ethernet_header));
+    tcp_header* tcpHeader = (tcp_header*)(packet + sizeof(ethernet_header) + ipHeader->hlen * 4);
+
+    printf("=============== info ===============\n");
+
+    //Ethernet Header Info
+    printf("Source MAC: %s\n", ether_ntoa((struct ether_addr *)ethernetHeader->src_mac));
+    printf("Destination MAC: %s\n", ether_ntoa((struct ether_addr *)ethernetHeader->dst_mac));
+
+    //IP Header Info
+    printf("Source IP: %s\n", inet_ntoa(ipHeader->src_ip));
+    printf("Destination IP: %s\n", inet_ntoa(ipHeader->dst_ip));
+
+    //TCP Header Info
+    printf("Source Port: %d\n", ntohs(tcpHeader->src_port));
+    printf("Destination Port: %d\n", ntohs(tcpHeader->dst_port));
+
+    printf("\n");
 }
